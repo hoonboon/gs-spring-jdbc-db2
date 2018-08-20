@@ -38,8 +38,8 @@ public class CustomerService {
       
       jdbcTemplate.execute("create table common.customers ("
           + "ID BIGINT  NOT NULL  GENERATED ALWAYS AS IDENTITY (START WITH 1001, INCREMENT BY 1, NO CACHE ) , "
-          + "FIRST_NAME VARCHAR(4) , "
-          + "LAST_NAME VARCHAR(4) , "
+          + "FIRST_NAME VARCHAR(255) , "
+          + "LAST_NAME VARCHAR(255) , "
           + "PRIMARY KEY (ID)"
           + ")");
       
