@@ -3,26 +3,33 @@ package hello;
 import java.sql.BatchUpdateException;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.FutureTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ParameterizedPreparedStatementSetter;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class CustomerService {
+public class ConcurrentCustomerService {
   
-  private static final Logger log = LoggerFactory.getLogger(CustomerService.class);
+  private static final Logger log = LoggerFactory.getLogger(ConcurrentCustomerService.class);
   
   @Autowired
   JdbcTemplate jdbcTemplate;
+  
+//  @Autowired
+//  ThreadPoolTaskExecutor taskExecutor;
   
   @Transactional(isolation=Isolation.READ_COMMITTED)
   public void createTable() 
@@ -53,6 +60,30 @@ public class CustomerService {
     return;
   }
   
+  public static void insertDataConcurrently(
+      List<Object[]> splitNames, ConcurrentCustomerService conCustomerService, ThreadPoolTaskExecutor taskExecutor) 
+  throws Exception {
+    
+    List<FutureTask<Boolean>> taskList = new ArrayList<FutureTask<Boolean>>();
+    Callable<Boolean> callable = null;
+    FutureTask<Boolean> task = null;
+    
+    callable = new CallableInsertTask(splitNames.subList(0, 2), conCustomerService);
+    task = new FutureTask<>(callable);
+    taskList.add(task);
+    taskExecutor.submit(task);
+    
+    callable = new CallableInsertTask(splitNames.subList(2, 4), conCustomerService);
+    task = new FutureTask<>(callable);
+    taskList.add(task);
+    taskExecutor.submit(task);
+    
+    for (int i = 0; i < taskList.size(); i++) {
+      task = taskList.get(i);
+      // blocks current thread until result is returned by tempTask
+      task.get();
+    }
+  }
 
   @Transactional(isolation=Isolation.READ_COMMITTED)
   public void insertData(List<Object[]> splitNames) 
@@ -62,6 +93,8 @@ public class CustomerService {
     final String strSqlInsert = "insert into common.customers(FIRST_NAME, LAST_NAME) values (?, ?)";
 
     try {
+      splitNames.forEach(name -> log.info(String.format("Working data: %s, %s", name[0], name[1])));
+      
       int[][] updateCounts = jdbcTemplate.batchUpdate(
           strSqlInsert, splitNames, 3, 
           new ParameterizedPreparedStatementSetter<Object[]>() {
@@ -114,6 +147,5 @@ public class CustomerService {
     
     log.info("findByFirstName() end");
   }
-  
   
 }
