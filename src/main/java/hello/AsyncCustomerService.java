@@ -6,24 +6,23 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.FutureTask;
+import java.util.concurrent.CompletableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ParameterizedPreparedStatementSetter;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class ConcurrentCustomerService {
+public class AsyncCustomerService {
   
-  private static final Logger log = LoggerFactory.getLogger(ConcurrentCustomerService.class);
+  private static final Logger log = LoggerFactory.getLogger(AsyncCustomerService.class);
   
   @Autowired
   JdbcTemplate jdbcTemplate;
@@ -60,39 +59,35 @@ public class ConcurrentCustomerService {
     return;
   }
   
-  public static void insertDataConcurrently(
-      List<Object[]> splitNames, ConcurrentCustomerService conCustomerService, ThreadPoolTaskExecutor taskExecutor) 
+  public static void insertDataAsync(List<Object[]> splitNames, AsyncCustomerService asyncCustomerService) 
   throws Exception {
-    log.info("insertDataConcurrently() start");
+    log.info("insertDataAsync() start");
     
-    List<FutureTask<Boolean>> taskList = new ArrayList<FutureTask<Boolean>>();
-    Callable<Boolean> callable = null;
-    FutureTask<Boolean> task = null;
+    List<CompletableFuture<Boolean>> taskList = new ArrayList<CompletableFuture<Boolean>>();
+    CompletableFuture<Boolean> cf = null;
     
-    callable = new CallableInsertTask(splitNames.subList(0, 2), conCustomerService);
-    task = new FutureTask<>(callable);
-    taskList.add(task);
-    taskExecutor.submit(task);
+    cf = asyncCustomerService.insertData(splitNames.subList(0, 2));
+    taskList.add(cf);
     
-    callable = new CallableInsertTask(splitNames.subList(2, 4), conCustomerService);
-    task = new FutureTask<>(callable);
-    taskList.add(task);
-    taskExecutor.submit(task);
+    cf = asyncCustomerService.insertData(splitNames.subList(2, 4));
+    taskList.add(cf);
     
     for (int i = 0; i < taskList.size(); i++) {
-      task = taskList.get(i);
+      cf = taskList.get(i);
       // blocks current thread until result is returned by tempTask
-      task.get();
+      cf.join();
     }
     
-    log.info("insertDataConcurrently() end");
+    log.info("insertDataAsync() end");
   }
 
   @Transactional(isolation=Isolation.READ_COMMITTED)
-  public void insertData(List<Object[]> splitNames) 
+  @Async
+  public CompletableFuture<Boolean> insertData(List<Object[]> splitNames) 
   throws Exception {
     log.info("insertData() start");
     
+    Boolean result = Boolean.FALSE;
     final String strSqlInsert = "insert into common.customers(FIRST_NAME, LAST_NAME) values (?, ?)";
 
     try {
@@ -111,6 +106,7 @@ public class ConcurrentCustomerService {
             
           });
       log.info(String.format("Update counts: %s", Arrays.deepToString(updateCounts)));
+      result = Boolean.TRUE;
     } catch (DataAccessException e) {
       if (e.contains(BatchUpdateException.class)) {
         SQLException be = (SQLException)e.getCause();
@@ -128,6 +124,8 @@ public class ConcurrentCustomerService {
     }
     
     log.info("insertData() end");
+    
+    return CompletableFuture.completedFuture(result);
   }
   
   

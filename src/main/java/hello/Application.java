@@ -10,11 +10,13 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 @SpringBootApplication
 @EnableTransactionManagement
+@EnableAsync
 public class Application implements CommandLineRunner {
 
   private static final Logger log = LoggerFactory.getLogger(Application.class);
@@ -41,13 +43,17 @@ public class Application implements CommandLineRunner {
   ConcurrentCustomerService conCustService;
   
   @Autowired
+  AsyncCustomerService asyncCustService;
+  
+  @Autowired
   ThreadPoolTaskExecutor taskExecutor;
   
   @Override
   public void run(String... args) throws Exception {
     
     startProcess();
-    startConProcess();
+    startConcurrentProcess();
+    startAsyncProcess();
     
     if (taskExecutor.getActiveCount() == 0) {
       taskExecutor.shutdown();
@@ -76,15 +82,15 @@ public class Application implements CommandLineRunner {
       custService.findByFirstName(searchFirstName);
       
     } catch (Exception e) {
-      log.error("startProcess(): " + e.getMessage());
+      log.error("startProcess(): " + e.getMessage(), e);
     }
     
     log.info("startProcess() end");
   }
   
   
-  public void startConProcess() {
-    log.info("startConProcess() start");
+  public void startConcurrentProcess() {
+    log.info("startConcurrentProcess() start");
     
     try {
       conCustService.createTable();
@@ -105,9 +111,38 @@ public class Application implements CommandLineRunner {
       conCustService.findByFirstName(searchFirstName);
 
     } catch (Exception e) {
-      log.error("startConProcess(): " + e.getMessage());
+      log.error("startConcurrentProcess(): " + e.getMessage(), e);
     }
     
-    log.info("startConProcess() end");
+    log.info("startConcurrentProcess() end");
+  }
+  
+  
+  public void startAsyncProcess() {
+    log.info("startAsyncProcess() start");
+    
+    try {
+      asyncCustService.createTable();
+
+      final String[] originalNames = new String[] { "John Woo", "Jeff Dean", "Josh Bloch", "Josh Long" };
+      log.info(String.format("originalNames=%s", Arrays.toString(originalNames)));
+
+      List<Object[]> splitNames = Arrays.asList(originalNames).stream()
+          .map(name -> name.split(" "))
+          .collect(Collectors.toList());
+
+      splitNames.forEach(name -> log.info(String.format("Source data: %s, %s", name[0], name[1])));
+
+      AsyncCustomerService.insertDataAsync(splitNames, asyncCustService);
+      
+      final String searchFirstName = "Josh";
+      log.info(String.format("Customers with firstName='%s': ", searchFirstName));
+      asyncCustService.findByFirstName(searchFirstName);
+
+    } catch (Exception e) {
+      log.error("startAsyncProcess(): " + e.getMessage(), e);
+    }
+    
+    log.info("startAsyncProcess() end");
   }
 }
